@@ -8,6 +8,10 @@ import os
 
 #python fecit.py input.bam output_dir
 
+#Fec singularity command (adjust accordingly)
+fec="singularity exec fec_1.0.1--he70b90d_2.sif Fec"
+
+
 min_ctg_length=1000000
 threads=16
 
@@ -23,7 +27,7 @@ header=samfile.header
 
 
 
-os.system(f"samtools fasta -f 4 {sys.argv[1]} | bgzip -@ {threads} -c - > {sys.argv[2]}/unaligned.fasta.gz")
+os.system(f"samtools view -buh -f 4 {sys.argv[1]} '*' | samtools fasta - | bgzip -@ {threads} -c 1> {sys.argv[2]}/unaligned.fasta.gz 2> /dev/null")
 
 chromosomes=[]
 for contig in header["SQ"]:
@@ -31,13 +35,13 @@ for contig in header["SQ"]:
 		chromosomes.append(contig["SN"])
 		continue
 
-	os.system(f"samtools view -buh {sys.argv[1]} {contig["SN"]} | samtools fasta - | bgzip -@ {threads} -c - >> {sys.argv[2]}/unaligned.fasta.gz")
+	os.system(f"samtools view -buh {sys.argv[1]} {contig['SN']} | samtools fasta - | bgzip -@ {threads} -c >> {sys.argv[2]}/unaligned.fasta.gz")
 
 awk_cmd="awk '{ if($4 - $3 >= 0.2 * $2 || $9 - $8 >= 0.2 * $7) print $0}'"
 for chromosome in chromosomes:
-	os.system(f"samtools view -buh {sys.argv[1]} {chromosome} | samtools fastq - > {sys.argv[2]}/reads.fq")
+	os.system(f"samtools view -buh {sys.argv[1]} {chromosome} |samtools fastq - > {sys.argv[2]}/reads.fq")
 	os.system(f"minimap2 -x ava-ont -w 20 -K 2g -f 0.0005 -t {threads} {sys.argv[2]}/reads.fq {sys.argv[2]}/reads.fq | {awk_cmd} > {sys.argv[2]}/ovlp.paf")
-	os.system(f"Fec -x 1 -t {threads} -r 0.6 -a 400 -c 0 -l 1000 -m 0.005 -f 0.2 {sys.argv[2]}/ovlp.paf {sys.argv[2]}/reads.fq {sys.argv[2]}/corrected_{chromosome}.fasta")
-	os.system(f"bgzip -@ {threads} {{sys.argv[2]}/corrected_{chromosome}.fasta}")
+	os.system(f"{fec} -s 0 -x 1 -t {threads} -r 0.6 -a 400 -c 0 -l 1000 -m 0.005 -f 0.2 {sys.argv[2]}/ovlp.paf {sys.argv[2]}/reads.fq {sys.argv[2]}/corrected_{chromosome}.fasta")
+	os.system(f"bgzip -@ {threads} {sys.argv[2]}/corrected_{chromosome}.fasta")
 
 os.system(f"cat {sys.argv[2]}/corrected_* {sys.argv[2]}/unaligned.fasta.gz > {sys.argv[2]}/combined_and_corrected.fasta.gz")
